@@ -1,5 +1,5 @@
 ;; The result of a team effort between programble and Rayne.
-(ns lazybot.plugins.title
+(ns lazybot.plugins.http-info
   (:require [lazybot.info :as info]
             [lazybot.registry :as registry]
             [lazybot.utilities :as utilities]
@@ -40,28 +40,61 @@
 (defn strip-tilde [s] (apply str (remove #{\~} s)))
 
 (defn title [{:keys [network nick bot user channel] :as com-m}
+             link verbose?]
+  (try
+    (thunk-timeout #(let [url (add-url-prefix link)
+                          page (slurp-or-default url)
+                          match (second page)]
+                     (if (and (seq page) (seq match) (not (url-check network bot url)))
+                       (registry/send-message com-m
+                                              (str "\""
+                                                   (triml
+                                                     (StringEscapeUtils/unescapeHtml
+                                                       (collapse-whitespace match)))
+                                                   "\""))
+                       (when verbose? (registry/send-message com-m "Page has no title."))))
+                   20 :sec)
+    (catch TimeoutException _
+      (when verbose?
+        (registry/send-message com-m "It's taking too long to find the title. I'm giving up.")))))
+
+(defn pull-handlers [bot]
+  (map :fn
+       (:urlhandlers
+         (apply merge-with concat
+                (map :hooks
+                     (vals (get-in @bot [:modules :internal :urlhandlers])))))))
+
+(defn http-info [{:keys [network nick bot user channel] :as com-m}
              links & {verbose? :verbose?}]
   (if (or (and verbose? (seq links))
           (not (contains? (get-in @bot [:config network :title :blacklist])
                           channel)))
-    (doseq [link (take 1 links)]
-      (try
-       (thunk-timeout #(let [url (add-url-prefix link)
-                             page (slurp-or-default url)
-                             match (second page)]
-                         (if (and (seq page) (seq match) (not (url-check network bot url)))
-                           (registry/send-message com-m
-                                              (str "\""
-                                                   (triml
-                                                    (StringEscapeUtils/unescapeHtml
-                                                     (collapse-whitespace match)))
-                                                   "\""))
-                           (when verbose? (registry/send-message com-m "Page has no title."))))
-                      20 :sec)
-       (catch TimeoutException _
-         (when verbose?
-           (registry/send-message com-m "It's taking too long to find the title. I'm giving up.")))))
+    (let [handlers (get-in @bot [:modules :internal :urlhandlers])]
+      (doseq [link (take 1 links)]
+        (title com-m link verbose?)))
     (when verbose? (registry/send-message com-m "Which page?"))))
+
+(defn parse-fns [body]
+  (apply registry/merge-with-conj
+         (for [[one & [two three :as args]] body]
+           {one
+            (case
+              one
+              :url {two {:fn three}}
+              two)})))
+
+(defmacro defurlhandler [& body]
+  (let [{:keys [url]} (parse-fns body)]
+    `(let [pns# *ns*
+           m-name# (module-name pns#)]
+       (defn ~'load-this-url [com# bot#]
+         (dosync
+           (alter bot# assoc-in [:modules :internal :urlhandlers m-name#]
+                  {:urls (into {}
+                               (for [[k# v#] (apply registry/merge-with-conj
+                                                    (registry/make-vector ~url))]
+                                 [k# (registry/make-vector v#)]))}))))))
 
 (registry/defplugin
   (:hook
@@ -78,8 +111,8 @@
                                (get-in info [network :title :automatic?])
                                (seq links))]
          (when title-links?
-           (title com-m links))))))
+           (http-info com-m links))))))
 
   (:cmd
    "Gets the title of a web page. Takes a link. This is verbose, and prints error messages."
-   #{"title"} (fn [com-m] (title com-m (:args com-m) :verbose? true))))
+   #{"title"} (fn [com-m] (http-info com-m (:args com-m) :verbose? true))))

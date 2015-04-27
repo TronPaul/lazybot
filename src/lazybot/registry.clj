@@ -125,12 +125,15 @@
 ;; Wrap isolated objects with a vector
 (def make-vector (to-fix (! vector?) vector))
 
+(defn module-name [ns]
+  (keyword (last (.split (str ns) "\\."))))
+
 ;; This is the meat -- our plugin DSL.
 (defmacro defplugin [& body]
   (let [{:keys [cmd hook cleanup init indexes routes]} (parse-fns body)
         scmd (if (map? cmd) [cmd] cmd)]
     `(let [pns# *ns*
-           m-name# (keyword (last (.split (str pns#) "\\.")))]
+           m-name# (module-name pns#)]
        (defn ~'load-this-plugin [com# bot#]
          (when ~init ((if-seq-error "init" ~init) com# bot#))
          (doseq [idx# ~indexes]

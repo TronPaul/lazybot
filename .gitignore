@@ -11,3 +11,5 @@ logs
 target
 .lein-failures
 .lein-repl-history
+.idea/
+*.iml
