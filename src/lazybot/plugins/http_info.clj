@@ -58,21 +58,13 @@
       (when verbose?
         (registry/send-message com-m "It's taking too long to find the title. I'm giving up.")))))
 
-(defn pull-handlers [bot]
-  (map :fn
-       (:urlhandlers
-         (apply merge-with concat
-                (map :hooks
-                     (vals (get-in @bot [:modules :internal :urlhandlers])))))))
-
 (defn http-info [{:keys [network nick bot user channel] :as com-m}
              links & {verbose? :verbose?}]
   (if (or (and verbose? (seq links))
           (not (contains? (get-in @bot [:config network :title :blacklist])
                           channel)))
-    (let [handlers (get-in @bot [:modules :internal :urlhandlers])]
-      (doseq [link (take 1 links)]
-        (title com-m link verbose?)))
+    (doseq [link (take 1 links)]
+      (title com-m link verbose?))
     (when verbose? (registry/send-message com-m "Which page?"))))
 
 (defn parse-fns [body]
@@ -84,19 +76,36 @@
               :url {two {:fn three}}
               two)})))
 
+(defn load-url-handler
+  "Load a plugin (a Clojure source file)."
+  [irc refzors plugin]
+  (let [ns (symbol (str "lazybot.plugins." plugin))]
+    (require ns :reload)
+    ((resolve (symbol (str ns "/load-this-url"))) irc refzors)))
+
+(defn load-url-handlers
+  "Load all plugins specified in the bot's configuration."
+  [irc refzors]
+  (let [url-handlers (-> @refzors :config (get (:network @irc)) :urlhandlers)]
+    (doseq [handler url-handlers]
+      (load-url-handler irc refzors handler))))
+
 (defmacro defurlhandler [& body]
   (let [{:keys [url]} (parse-fns body)]
     `(let [pns# *ns*
            m-name# (module-name pns#)]
        (defn ~'load-this-url [com# bot#]
          (dosync
-           (alter bot# assoc-in [:modules :internal :urlhandlers m-name#]
+           (alter bot# assoc-in [:url-handlers m-name#]
                   {:urls (into {}
                                (for [[k# v#] (apply registry/merge-with-conj
                                                     (registry/make-vector ~url))]
                                  [k# (registry/make-vector v#)]))}))))))
 
 (registry/defplugin
+  (:init
+    (fn [com bot]
+      (load-url-handlers com bot)))
   (:hook
    :privmsg
    (fn [{:keys [network bot nick channel message] :as com-m}]
