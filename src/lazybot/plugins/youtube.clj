@@ -4,6 +4,6 @@
 
 (http-info/defurlhandler
   (:url
-    #"(youtu\.be/.+|(www\.)?youtube\.com/.+[?&]v=.*"
-    (fn [url config]
-      )))
+    #"(https?://)?(youtu\.be/.+|(www\.)?youtube\.com/.+[?&]v=.*)"
+    (fn [com-m link verbose?]
+      link)))
