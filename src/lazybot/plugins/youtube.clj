@@ -1,6 +1,5 @@
 (ns lazybot.plugins.youtube
-  (:require [lazybot.registry :as registry]
-            [cheshire.core :refer [parse-string]]
+  (:require [cheshire.core :refer [parse-string]]
             [lazybot.plugins.http-info :as http-info]
             [clj-http.client :as http]
             [clojure.java.io :as io]
@@ -20,13 +19,13 @@
         (last (string/split q-param #"="))))))
 
 (defn get-duration [dstr]
-  dstr)
+  (let [[_ _ minutes _ seconds] (re-find #"^PT((?<minutes>\d+)M)?((?<seconds>\d+)S)?$" dstr)]
+    (str (when minutes (str minutes "\u0002m\u0002")) seconds "\u0002s\u0002")))
 
 (defn parse-clj-string [s]
   (parse-string s true))
 
 (defn get-video-info [id key]
-  (println (-> (http/get api-url {:query-params {:id id :key key :part "contentDetails,statistics,snippet"}}) :body parse-clj-string :items first))
   (let [info (-> (http/get api-url {:query-params {:id id :key key :part "contentDetails,statistics,snippet"}}) :body parse-clj-string :items first)]
     {:Youtube  (-> info :snippet :title)
      :By       (-> info :snippet :channelTitle)
