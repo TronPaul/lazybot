@@ -1,12 +1,11 @@
 ;; The result of a team effort between programble and Rayne.
 (ns lazybot.plugins.http-info
-  (:require [lazybot.info :as info]
-            [lazybot.registry :as registry]
-            [lazybot.utilities :as utilities]
+  (:require [lazybot.registry :as registry]
             [clojure.java.io :refer [reader]]
             [clojure.string :refer [triml]]
             [clojure.tools.logging :refer [debug]]
-            [clojail.core :refer [thunk-timeout]])
+            [clojail.core :refer [thunk-timeout]]
+            [clojure.string :as string])
   (:import java.util.concurrent.TimeoutException
            org.apache.commons.lang.StringEscapeUtils))
 
@@ -60,7 +59,11 @@
 
 (defn try-handler [handler com-m link verbose?]
   (try
-    (thunk-timeout #(registry/send-message com-m (handler com-m link verbose?))
+    (thunk-timeout #(let [msg (handler com-m link verbose?)]
+                     (if (not (string/blank? msg))
+                       (registry/send-message msg com-m)
+                       (when verbose?
+                         (registry/send-message com-m (str "Empty http-info for " link)))))
                    20 :sec)
     (catch TimeoutException _
       (when verbose?
