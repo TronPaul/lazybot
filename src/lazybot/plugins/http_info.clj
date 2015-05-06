@@ -6,11 +6,17 @@
             [clojure.java.io :refer [reader]]
             [clojure.string :refer [triml]]
             [clojure.tools.logging :refer [debug]]
-            [clojail.core :refer [thunk-timeout]])
+            [clojail.core :refer [thunk-timeout]]
+            [cheshire.core :refer [parse-string]])
   (:import java.util.concurrent.TimeoutException
            org.apache.commons.lang.StringEscapeUtils))
 
 (def titlere #"(?i)<title>([^<]+)</title>")
+
+(def bold "\u0002")
+
+(defn parse-clj-string [s]
+  (parse-string s true))
 
 (defn collapse-whitespace [s]
   (->> s (.split #"\s+") (interpose " ") (apply str)))
