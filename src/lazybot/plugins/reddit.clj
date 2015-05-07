@@ -12,41 +12,42 @@
 (def link-pattern #"/(?<type>[^/]+)/(?<target>[^?/]+)(/comments/(?<longid>(?<postid>[^/]+)/(?<postname>[^/]+)(/(?<commentid>[^/]+))?)?)?")
 
 (defn api-request [url & [req]]
-  (http/get url (merge {:headers {"User-Agent" user-agent}} req)))
+  (-> (http/get url (merge {:headers {"User-Agent" user-agent}} req)) :body http-info/parse-clj-string))
 
 (defn parse-link [url]
   (re-find link-pattern (.getPath url)))
 
+(defn maybe-nsfw [info]
+  (when (:over_18 info) "[NSFW] "))
+
 (defn handle-user [user]
   (let [api (str api-base "user/" user "/about.json")
-        info (-> (api-request api) :body http-info/parse-clj-string :data)]
+        info (-> (api-request api) :data)
+        date (f/unparse (f/formatters :basic-date) (f/parse (:created_utc info)))]
     (str http-info/bold (:name info) http-info/bold " - " http-info/bold (:link_karma info) http-info/bold " Link Karma - "
-         http-info/bold (:comment_karma info) http-info/bold " Comment Karma - Joined " (f/unparse (f/formatters :basic-date) (f/parse (:created_utc info))))))
+         http-info/bold (:comment_karma info) http-info/bold " Comment Karma - Joined " date)))
 
 (defn handle-subreddit [subreddit]
   (let [api (str api-base "r/" subreddit "/about.json")
-        info (-> (api-request api) :body http-info/parse-clj-string :data)]
-    (str (when (:over_18 info)
-           "[NSFW] ") (:url info) ": " http-info/bold (:title info) http-info/bold
-         " - " http-info/bold (:subscribers info) http-info/bold " subscribers - "
-         (subs (:public_description info) 0 (min 512 (count (:public_description info)))))))
+        info (-> (api-request api) :data)
+        description (subs (:public_description info) 0 (min 512 (count (:public_description info))))]
+    (str (maybe-nsfw info) (:url info) ": " http-info/bold (:title info) http-info/bold
+         " - " http-info/bold (:subscribers info) http-info/bold " subscribers - " description)))
 
 (defn handle-post [post]
   (let [api (str api-base "comments/" post ".json")
-        info (-> (api-request api) :body http-info/parse-clj-string first :data :children first :data)]
-    (str (when (:over_18 info)
-           "[NSFW] ") "/r/" (:subreddit info) ": " http-info/bold (:title info) http-info/bold " - "
+        info (-> (api-request api) first :data :children first :data)]
+    (str (maybe-nsfw info) "/r/" (:subreddit info) ": " http-info/bold (:title info) http-info/bold " - "
          http-info/bold (:score info) http-info/bold " Karma - " http-info/bold (:num_comments info) http-info/bold " Comments")))
 
 (defn handle-comment [comment]
   (let [api (str api-base "comments/" comment ".json")
-        info (-> (api-request api {:query-params {"depth" 1}}) :body http-info/parse-clj-string second :data :children first :data)
+        info (-> (api-request api {:query-params {"depth" 1}}) second :data :children first :data)
         score (- (int (:ups info)) (int (:downs info)))
         attrs (filter identity [(when (> (:gilded info) 0) "Gilded") (when (:edited info) "Edited")])
+        attrs-string (when (> (count attrs) 0) (str "(" (string/join attrs ",") ") "))
         body (first (string/split (:body info) #"\n"))]
-    (str (when (:over_18 info)
-           "[NSFW] ") "Comment by " (:author info) " " http-info/bold score http-info/bold " Karma " (when (> (count attrs) 0)
-                                                                                                            (str "(" (string/join attrs ",") ") ")) "- " body)))
+    (str (maybe-nsfw info) "Comment by " (:author info) " " http-info/bold score http-info/bold " Karma " attrs-string "- " body)))
 
 (defn handle-r-type [match]
   (cond
