@@ -66,8 +66,9 @@
 (defn try-handler [handler com-m link verbose?]
   (try
     (thunk-timeout #(let [msg (handler com-m link verbose?)]
+                     (println com-m)
                      (if (not (string/blank? msg))
-                       (registry/send-message msg com-m)
+                       (registry/send-message com-m msg)
                        (when verbose?
                          (registry/send-message com-m (str "Empty http-info for " link)))))
                    20 :sec)
