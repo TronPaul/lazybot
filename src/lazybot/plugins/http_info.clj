@@ -6,7 +6,8 @@
             [clojure.tools.logging :refer [debug]]
             [clojail.core :refer [thunk-timeout]]
             [cheshire.core :refer [parse-string]]
-            [clojure.string :as string])
+            [clojure.string :as string]
+            [clojure.tools.logging :as log])
   (:import java.util.concurrent.TimeoutException
            org.apache.commons.lang.StringEscapeUtils))
 
@@ -66,7 +67,6 @@
 (defn try-handler [handler com-m link verbose?]
   (try
     (thunk-timeout #(let [msg (handler com-m link verbose?)]
-                     (println com-m)
                      (if (not (string/blank? msg))
                        (registry/send-message com-m msg)
                        (when verbose?
@@ -74,7 +74,11 @@
                    20 :sec)
     (catch TimeoutException _
       (when verbose?
-        (registry/send-message com-m "It's taking too long to find the title. I'm giving up.")))))
+        (registry/send-message com-m "It's taking too long to find the title. I'm giving up.")))
+    (catch Exception e
+      (log/error e "Trying to execute handler")
+      (when verbose?
+        (registry/send-message com-m (str (-> e (.getClass) (.getSimpleName)) " ocurred"))))))
 
 (defn get-handler-fn [bot link]
   (if-let [handler (first-matching-handler-fn (pull-handlers bot) link)]
